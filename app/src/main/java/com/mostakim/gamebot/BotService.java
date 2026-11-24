@@ -2,16 +2,23 @@ package com.mostakim.gamebot;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.GestureDescription;
+import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.graphics.Path;
-import android.view.Display;
+import android.graphics.PixelFormat;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Gravity;
+import android.view.View;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 public class BotService extends AccessibilityService {
     public static BotService instance;
-
-    public interface ShotCb { void done(boolean ok); }
+    View overlay;
 
     @Override
     protected void onServiceConnected() {
@@ -26,6 +33,7 @@ public class BotService extends AccessibilityService {
 
     @Override
     public boolean onUnbind(Intent i) {
+        hideOverlay();
         instance = null;
         return super.onUnbind(i);
     }
@@ -39,25 +47,72 @@ public class BotService extends AccessibilityService {
         dispatchGesture(b.build(), null, null);
     }
 
-    public void shot(final ShotCb cb) {
-        takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(),
-            new TakeScreenshotCallback() {
-                @Override
-                public void onSuccess(ScreenshotResult r) {
-                    try {
-                        Bitmap hw = Bitmap.wrapHardwareBuffer(
-                            r.getHardwareBuffer(), r.getColorSpace());
-                        Bitmap sw = hw.copy(Bitmap.Config.ARGB_8888, false);
-                        hw.recycle();
-                    } catch (Throwable t) {}
-                    r.getHardwareBuffer().close();
-                    cb.done(true);
-                }
+    public void showOverlay() {
+        if (overlay != null) return;
+        final WindowManager wm =
+            (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setBackgroundColor(0xCC000000);
+        box.setPadding(16, 16, 16, 16);
 
-                @Override
-                public void onFailure(int code) {
-                    cb.done(false);
-                }
-            });
+        final TextView tv = new TextView(this);
+        tv.setTextColor(0xFFFFFFFF);
+        tv.setTextSize(12);
+        final Button go = new Button(this);
+        go.setText("START");
+        Button x = new Button(this);
+        x.setText("CLOSE");
+
+        go.setOnClickListener(v -> {
+            if (Bot.running) {
+                Bot.running = false;
+                Bot.info = "থেমে আছে";
+                go.setText("START");
+            } else {
+                Bot.startTime = System.currentTimeMillis();
+                Bot.running = true;
+                go.setText("STOP");
+            }
+        });
+        x.setOnClickListener(v -> hideOverlay());
+
+        box.addView(tv);
+        box.addView(go);
+        box.addView(x);
+
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        lp.x = 0;
+        lp.y = 1100;
+        wm.addView(box, lp);
+        overlay = box;
+
+        final Handler hd = new Handler(Looper.getMainLooper());
+        hd.post(new Runnable() {
+            @Override
+            public void run() {
+                if (overlay == null) return;
+                tv.setText(Bot.info);
+                if (!Bot.running) go.setText("START");
+                hd.postDelayed(this, 200);
+            }
+        });
+    }
+
+    public void hideOverlay() {
+        Bot.running = false;
+        if (overlay != null) {
+            WindowManager wm =
+                (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+            wm.removeView(overlay);
+            overlay = null;
+        }
+        stopService(new Intent(this, CaptureService.class));
     }
 }
