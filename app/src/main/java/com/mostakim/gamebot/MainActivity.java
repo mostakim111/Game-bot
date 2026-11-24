@@ -43,9 +43,40 @@ public class MainActivity extends Activity {
                 () -> s.swipe(900, 1200, 200, 1200, 300), 1000);
         });
 
+        Button c = new Button(this);
+        c.setText("3. Screenshot গতি পরীক্ষা (২০ বার)");
+        c.setOnClickListener(v -> {
+            BotService s = BotService.instance;
+            if (s == null) {
+                status.setText("Service চালু নেই");
+                return;
+            }
+            final int N = 20;
+            final int[] n = {0, 0};
+            final long t0 = System.currentTimeMillis();
+            status.setText("মাপা হচ্ছে...");
+            BotService.ShotCb cb = new BotService.ShotCb() {
+                @Override
+                public void done(boolean ok) {
+                    n[0]++;
+                    if (ok) n[1]++;
+                    if (n[0] < N) {
+                        s.shot(this);
+                    } else {
+                        long ms = System.currentTimeMillis() - t0;
+                        status.setText("সফল " + n[1] + "/" + N
+                            + ", মোট " + ms + "ms, প্রতি সফল ফ্রেম ≈ "
+                            + (n[1] > 0 ? ms / n[1] : 0) + "ms");
+                    }
+                }
+            };
+            s.shot(cb);
+        });
+
         l.addView(status);
         l.addView(a);
         l.addView(t);
+        l.addView(c);
         setContentView(l);
     }
 
