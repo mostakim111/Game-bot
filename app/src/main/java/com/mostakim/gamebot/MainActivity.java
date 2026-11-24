@@ -44,10 +44,14 @@ public class MainActivity extends Activity {
         });
 
         Button c = new Button(this);
-        c.setText("3. স্ট্রিম গতি পরীক্ষা (৬ সেকেন্ড)");
+        c.setText("3. Vision test শুরু (swipe হবে না)");
         c.setOnClickListener(v -> {
-            CaptureService.result = "";
-            MediaProjectionManager m = getSystemService(MediaProjectionManager.class);
+            if (BotService.instance == null) {
+                status.setText("আগে Accessibility Service চালু করো");
+                return;
+            }
+            MediaProjectionManager m =
+                getSystemService(MediaProjectionManager.class);
             startActivityForResult(m.createScreenCaptureIntent(), 1);
         });
 
@@ -61,23 +65,20 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
-        if (req == 1 && res == RESULT_OK) {
+        if (req == 1 && res == RESULT_OK && BotService.instance != null) {
             Intent i = new Intent(this, CaptureService.class);
             i.putExtra("code", res);
             i.putExtra("data", data);
             startForegroundService(i);
-            status.setText("চালু। এখন গেমে বা ভিডিওতে যাও, ৬ সেকেন্ড পর ফিরে এসো।");
+            BotService.instance.showOverlay();
+            status.setText("চালু। এবার গেমে যাও, ভাসমান START চাপো।");
         }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
-        if (!CaptureService.result.isEmpty()) {
-            status.setText(CaptureService.result);
-        } else {
-            status.setText(BotService.instance != null
-                ? "Service চালু আছে" : "Service চালু নেই");
-        }
+        status.setText(BotService.instance != null
+            ? "Service চালু আছে" : "Service চালু নেই");
     }
 }
