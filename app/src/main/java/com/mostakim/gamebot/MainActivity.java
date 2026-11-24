@@ -3,6 +3,7 @@ package com.mostakim.gamebot;
 import android.accessibilityservice.AccessibilityService;
 import android.app.Activity;
 import android.content.Intent;
+import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -37,40 +38,17 @@ public class MainActivity extends Activity {
                 status.setText("Service চালু নেই");
                 return;
             }
-            status.setText("পরীক্ষা চলছে...");
             s.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME);
             new Handler(Looper.getMainLooper()).postDelayed(
                 () -> s.swipe(900, 1200, 200, 1200, 300), 1000);
         });
 
         Button c = new Button(this);
-        c.setText("3. Screenshot গতি পরীক্ষা (২০ বার)");
+        c.setText("3. স্ট্রিম গতি পরীক্ষা (৬ সেকেন্ড)");
         c.setOnClickListener(v -> {
-            BotService s = BotService.instance;
-            if (s == null) {
-                status.setText("Service চালু নেই");
-                return;
-            }
-            final int N = 20;
-            final int[] n = {0, 0};
-            final long t0 = System.currentTimeMillis();
-            status.setText("মাপা হচ্ছে...");
-            BotService.ShotCb cb = new BotService.ShotCb() {
-                @Override
-                public void done(boolean ok) {
-                    n[0]++;
-                    if (ok) n[1]++;
-                    if (n[0] < N) {
-                        s.shot(this);
-                    } else {
-                        long ms = System.currentTimeMillis() - t0;
-                        status.setText("সফল " + n[1] + "/" + N
-                            + ", মোট " + ms + "ms, প্রতি সফল ফ্রেম ≈ "
-                            + (n[1] > 0 ? ms / n[1] : 0) + "ms");
-                    }
-                }
-            };
-            s.shot(cb);
+            CaptureService.result = "";
+            MediaProjectionManager m = getSystemService(MediaProjectionManager.class);
+            startActivityForResult(m.createScreenCaptureIntent(), 1);
         });
 
         l.addView(status);
@@ -81,9 +59,25 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        if (req == 1 && res == RESULT_OK) {
+            Intent i = new Intent(this, CaptureService.class);
+            i.putExtra("code", res);
+            i.putExtra("data", data);
+            startForegroundService(i);
+            status.setText("চালু। এখন গেমে বা ভিডিওতে যাও, ৬ সেকেন্ড পর ফিরে এসো।");
+        }
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
-        status.setText(BotService.instance != null
-            ? "Service চালু আছে" : "Service চালু নেই");
+        if (!CaptureService.result.isEmpty()) {
+            status.setText(CaptureService.result);
+        } else {
+            status.setText(BotService.instance != null
+                ? "Service চালু আছে" : "Service চালু নেই");
+        }
     }
 }
