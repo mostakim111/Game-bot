@@ -17,14 +17,19 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 
+import java.nio.ByteBuffer;
+
 public class CaptureService extends Service {
-    public static volatile String result = "";
     MediaProjection mp;
     VirtualDisplay vd;
     ImageReader ir;
-    int frames = 0;
-    long t0;
     Handler h = new Handler(Looper.getMainLooper());
+
+    static final int W = 540, H = 1170, STEP = 6;
+    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 1000, THR = 40;
+    final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
+    int[] prev = new int[gw * gh];
+    boolean hasPrev = false;
 
     @Override
     public IBinder onBind(Intent i) { return null; }
@@ -47,31 +52,69 @@ public class CaptureService extends Service {
             @Override public void onStop() {}
         }, h);
 
-        int w = 540, hh = 1170;
-        ir = ImageReader.newInstance(w, hh, PixelFormat.RGBA_8888, 2);
-        vd = mp.createVirtualDisplay("cap", w, hh,
+        ir = ImageReader.newInstance(W, H, PixelFormat.RGBA_8888, 2);
+        vd = mp.createVirtualDisplay("cap", W, H,
             getResources().getDisplayMetrics().densityDpi / 2,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             ir.getSurface(), null, h);
 
-        frames = 0;
-        t0 = System.currentTimeMillis();
-        result = "চলছে...";
         ir.setOnImageAvailableListener(r -> {
             Image im = r.acquireLatestImage();
-            if (im != null) { frames++; im.close(); }
-            long el = System.currentTimeMillis() - t0;
-            if (el >= 6000) {
-                result = frames + " ফ্রেম / " + el + "ms ≈ "
-                    + (frames * 1000L / el) + " fps";
-                stopSelf();
-            }
+            if (im == null) return;
+            try { process(im); } finally { im.close(); }
         }, h);
         return START_NOT_STICKY;
     }
 
+    void process(Image im) {
+        Image.Plane p = im.getPlanes()[0];
+        ByteBuffer buf = p.getBuffer();
+        int rs = p.getRowStride(), ps = p.getPixelStride();
+        int[] cur = new int[gw * gh];
+        for (int gy = 0; gy < gh; gy++) {
+            for (int gx = 0; gx < gw; gx++) {
+                int x = X0 + gx * STEP, y = Y0 + gy * STEP;
+                int o = y * rs + x * ps;
+                int r = buf.get(o) & 0xff;
+                int g = buf.get(o + 1) & 0xff;
+                int b = buf.get(o + 2) & 0xff;
+                cur[gy * gw + gx] = (r * 3 + g * 6 + b) / 10;
+            }
+        }
+
+        if (Bot.running) {
+            if (System.currentTimeMillis() - Bot.startTime > Bot.MAX_MS) {
+                Bot.running = false;
+                Bot.info = "৬০ সেকেন্ড শেষ, থেমেছে";
+            } else if (hasPrev) {
+                int found = -1;
+                int cnt = 0;
+                long sx = 0;
+                for (int gy = gh - 1; gy >= 0 && found < 0; gy--) {
+                    int c = 0;
+                    long s = 0;
+                    for (int gx = 0; gx < gw; gx++) {
+                        int i = gy * gw + gx;
+                        if (Math.abs(cur[i] - prev[i]) > THR) { c++; s += gx; }
+                    }
+                    if (c >= 3) { found = gy; cnt = c; sx = s; }
+                }
+                if (found >= 0) {
+                    int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
+                    int ty = (Y0 + found * STEP) * 2;
+                    Bot.info = "আইটেম x=" + tx + " y=" + ty;
+                } else {
+                    Bot.info = "কিছু দেখছি না";
+                }
+            }
+        }
+        prev = cur;
+        hasPrev = true;
+    }
+
     @Override
     public void onDestroy() {
+        Bot.running = false;
         if (vd != null) vd.release();
         if (ir != null) ir.close();
         if (mp != null) mp.stop();
