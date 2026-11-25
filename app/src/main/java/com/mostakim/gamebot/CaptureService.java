@@ -169,4 +169,4 @@ public class CaptureService extends Service {
         if (ir != null) ir.close();
         if (mp != null) mp.stop();
     }
-}ই
+}
