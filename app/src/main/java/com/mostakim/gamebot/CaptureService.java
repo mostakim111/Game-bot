@@ -32,7 +32,7 @@ public class CaptureService extends Service {
     boolean hasPrev = false;
     int cartX = 540;
     long lastSwipe = 0;
-
+   int lastTapX = -1000;
     @Override
     public IBinder onBind(Intent i) { return null; }
 
@@ -134,11 +134,12 @@ public class CaptureService extends Service {
                         + " cart=" + (cartFound ? cartX : -1);
                     long now = System.currentTimeMillis();
                     BotService bs = BotService.instance;
-                     if (bs != null && cartFound && now - lastSwipe > 700
-                        && Math.abs(tx - cartX) > 50) {
-                        bs.swipe(cartX, 2130, tx, 2130, 450);
+                                         if (bs != null && now - lastSwipe > 100
+                            && Math.abs(tx - lastTapX) > 40) {
+                        bs.tap(tx, 2130);
+                        lastTapX = tx;
                         lastSwipe = now;
-                    }
+                                         }
                 } else {
                     Bot.info = "কিছু দেখছি না cart=" + (cartFound ? cartX : -1);
                 }
