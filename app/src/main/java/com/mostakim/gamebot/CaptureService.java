@@ -26,13 +26,18 @@ public class CaptureService extends Service {
     Handler h = new Handler(Looper.getMainLooper());
 
     static final int W = 540, H = 1170, STEP = 6;
-    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 960, THR = 40;
+    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 880, THR = 40;
+    static final int CATCH_Y = 2000;
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[] prev = new int[gw * gh];
     boolean hasPrev = false;
+
     int lastRow = -1;
+    int lastX = -1;
+    long lastT = 0;
+    double vy = 500;
     long holdUntil = 0;
-    static final long HOLD_MS = 400;
+
     @Override
     public IBinder onBind(Intent i) { return null; }
 
@@ -71,6 +76,18 @@ public class CaptureService extends Service {
         return START_NOT_STICKY;
     }
 
+    boolean chg(int[] cur, int gy, int gx) {
+        int i = gy * gw + gx;
+        return Math.abs(cur[i] - prev[i]) > THR;
+    }
+
+    void arm(long now) {
+        double eta = (CATCH_Y - (Y0 + lastRow * STEP) * 2) / vy * 1000 + 100;
+        if (eta < 200) eta = 200;
+        if (eta > 1000) eta = 1000;
+        holdUntil = now + (long) eta;
+    }
+
     void process(Image im) {
         Image.Plane p = im.getPlanes()[0];
         ByteBuffer buf = p.getBuffer();
@@ -88,36 +105,56 @@ public class CaptureService extends Service {
         }
 
         if (Bot.running && hasPrev) {
-            int found = -1, cnt = 0;
-            long sx = 0;
+            long now = System.currentTimeMillis();
+            int refX = Link.target > 0 ? Link.target : 540;
+            int found = -1, fx = -1;
             for (int gy = gh - 1; gy >= 0 && found < 0; gy--) {
-                int c = 0;
-                long s = 0;
-                for (int gx = 0; gx < gw; gx++) {
-                    int i = gy * gw + gx;
-                    if (Math.abs(cur[i] - prev[i]) > THR) { c++; s += gx; }
+                int bestX = -1, bestD = Integer.MAX_VALUE;
+                int gx = 0;
+                while (gx < gw) {
+                    if (!chg(cur, gy, gx)) { gx++; continue; }
+                    int cnt = 0, sum = 0, last = gx;
+                    while (gx < gw && gx - last <= 2) {
+                        if (chg(cur, gy, gx)) { cnt++; sum += gx; last = gx; }
+                        gx++;
+                    }
+                    if (cnt >= 4) {
+                        int x = (X0 + (sum / cnt) * STEP) * 2;
+                        int d = Math.abs(x - refX);
+                        if (d < bestD) { bestD = d; bestX = x; }
+                    }
                 }
-                if (c >= 3) { found = gy; cnt = c; sx = s; }
+                if (bestX >= 0) { found = gy; fx = bestX; }
             }
-                        long now = System.currentTimeMillis();
+
             if (found >= 0) {
-                int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
+                int tx = fx;
                 if (tx < 150) tx = 150;
                 if (tx > 930) tx = 930;
-                if (lastRow >= gh - 8 && found < lastRow - 12) {
-                    holdUntil = now + HOLD_MS;
+                int ty = (Y0 + found * STEP) * 2;
+                if (lastRow >= 0 && now > lastT && Math.abs(tx - lastX) < 80) {
+                    int dy = ty - (Y0 + lastRow * STEP) * 2;
+                    if (dy > 0 && dy < 120) {
+                        double v = dy * 1000.0 / (now - lastT);
+                        if (v > 100 && v < 3000) vy = vy * 0.8 + v * 0.2;
+                    }
                 }
+                if (lastRow >= gh - 10 && found < lastRow - 12) arm(now);
                 lastRow = found;
+                lastX = tx;
+                lastT = now;
                 if (now >= holdUntil) Link.target = tx;
                 Bot.info = "আইটেম x=" + tx
                     + (now < holdUntil ? " (ধরে রাখছি)" : "")
                     + "\n" + Link.state;
             } else {
-                if (lastRow >= gh - 8) holdUntil = now + HOLD_MS;
+                if (lastRow >= gh - 10) arm(now);
                 lastRow = -1;
                 Bot.info = "কিছু দেখছি না\n" + Link.state;
             }
         } else if (!Bot.running) {
+            lastRow = -1;
+            holdUntil = 0;
             Bot.info = "থেমে আছে\n" + Link.state;
         }
         prev = cur;
@@ -132,4 +169,4 @@ public class CaptureService extends Service {
         if (ir != null) ir.close();
         if (mp != null) mp.stop();
     }
-}
+}ই
