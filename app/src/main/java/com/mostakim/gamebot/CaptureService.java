@@ -134,9 +134,9 @@ public class CaptureService extends Service {
                         + " cart=" + (cartFound ? cartX : -1);
                     long now = System.currentTimeMillis();
                     BotService bs = BotService.instance;
-                    if (bs != null && cartFound && now - lastSwipe > 150
-                            && Math.abs(tx - cartX) > 50) {
-                        bs.swipe(cartX, 2130, tx, 2130, 100);
+                     if (bs != null && cartFound && now - lastSwipe > 700
+                        && Math.abs(tx - cartX) > 50) {
+                        bs.swipe(cartX, 2130, tx, 2130, 450);
                         lastSwipe = now;
                     }
                 } else {
