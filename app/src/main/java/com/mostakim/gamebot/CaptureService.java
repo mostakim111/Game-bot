@@ -30,7 +30,9 @@ public class CaptureService extends Service {
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[] prev = new int[gw * gh];
     boolean hasPrev = false;
-
+    int lastRow = -1;
+    long holdUntil = 0;
+    static final long HOLD_MS = 400;
     @Override
     public IBinder onBind(Intent i) { return null; }
 
@@ -97,13 +99,22 @@ public class CaptureService extends Service {
                 }
                 if (c >= 3) { found = gy; cnt = c; sx = s; }
             }
+                        long now = System.currentTimeMillis();
             if (found >= 0) {
                 int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
                 if (tx < 150) tx = 150;
                 if (tx > 930) tx = 930;
-                Link.target = tx;
-                Bot.info = "আইটেম x=" + tx + "\n" + Link.state;
+                if (lastRow >= gh - 8 && found < lastRow - 12) {
+                    holdUntil = now + HOLD_MS;
+                }
+                lastRow = found;
+                if (now >= holdUntil) Link.target = tx;
+                Bot.info = "আইটেম x=" + tx
+                    + (now < holdUntil ? " (ধরে রাখছি)" : "")
+                    + "\n" + Link.state;
             } else {
+                if (lastRow >= gh - 8) holdUntil = now + HOLD_MS;
+                lastRow = -1;
                 Bot.info = "কিছু দেখছি না\n" + Link.state;
             }
         } else if (!Bot.running) {
