@@ -26,7 +26,9 @@ public class CaptureService extends Service {
     Handler h = new Handler(Looper.getMainLooper());
 
     static final int W = 540, H = 1170, STEP = 6;
-    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 1000, THR = 40;
+    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 960, THR = 40;
+    int cartX = 540;
+    long lastSwipe = 0;
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[] prev = new int[gw * gh];
     boolean hasPrev = false;
@@ -102,7 +104,17 @@ public class CaptureService extends Service {
                 if (found >= 0) {
                     int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
                     int ty = (Y0 + found * STEP) * 2;
-                    Bot.info = "আইটেম x=" + tx + " y=" + ty;
+                                        if (tx < 150) tx = 150;
+                    if (tx > 930) tx = 930;
+                    Bot.info = "আইটেম x=" + tx + " y=" + ty + " cart=" + cartX;
+                    long now = System.currentTimeMillis();
+                    BotService bs = BotService.instance;
+                    if (bs != null && now - lastSwipe > 120
+                            && Math.abs(tx - cartX) > 50) {
+                        bs.swipe(cartX, 2130, tx, 2130, 60);
+                        cartX = tx;
+                        lastSwipe = now;
+                    }
                 } else {
                     Bot.info = "কিছু দেখছি না";
                 }
