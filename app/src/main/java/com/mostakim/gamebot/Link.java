@@ -43,7 +43,7 @@ public class Link {
                         send(o, "D " + t + " 2130");
                         down = true;
                         last = t;
-                                        } else if (Math.abs(t - last) >= 25) {
+                   } else if (Math.abs(t - last) >= 25) {
                         send(o, "M " + t + " 2130");
                         last = t;
                     }
