@@ -5,13 +5,19 @@ import android.view.InputDevice;
 import android.view.InputEvent;
 import android.view.MotionEvent;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.lang.reflect.Method;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
 
 public class Injector {
     static Object mgr;
     static Method inject;
-    static long injNs = 0;
-    static int injN = 0;
+    static long downTime = 0;
+    static volatile boolean isDown = false;
+    static volatile float lx = 540, ly = 2130;
 
     static void init() throws Exception {
         try {
@@ -25,32 +31,64 @@ public class Injector {
             InputEvent.class, int.class);
     }
 
-    static void send(int action, float x, float y, long down) throws Exception {
+    static synchronized void send(int action, float x, float y) throws Exception {
         long now = SystemClock.uptimeMillis();
-        MotionEvent e = MotionEvent.obtain(down, now, action, x, y,
+        if (action == MotionEvent.ACTION_DOWN) downTime = now;
+        MotionEvent e = MotionEvent.obtain(downTime, now, action, x, y,
             1.0f, 1.0f, 0, 1.0f, 1.0f, 0, 0);
         e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
-        long t0 = System.nanoTime();
         inject.invoke(mgr, e, 0);
-        injNs += System.nanoTime() - t0;
-        injN++;
         e.recycle();
+    }
+
+    static void release() {
+        try {
+            if (isDown) {
+                send(MotionEvent.ACTION_UP, lx, ly);
+                isDown = false;
+            }
+        } catch (Throwable ignore) {}
     }
 
     public static void main(String[] args) {
         try {
             init();
-            System.out.println("তৈরি। ৮ সেকেন্ডে গেমে গিয়ে খেলা শুরু করো...");
-            Thread.sleep(8000);
-            long down = SystemClock.uptimeMillis();
-            send(MotionEvent.ACTION_DOWN, 200, 2130, down);
-            for (int i = 1; i <= 40; i++) {
-                send(MotionEvent.ACTION_MOVE, 200 + 680f * i / 40f, 2130, down);
-                Thread.sleep(16);
+            Runtime.getRuntime().addShutdownHook(new Thread(Injector::release));
+            ServerSocket ss = new ServerSocket(7777, 1,
+                InetAddress.getByName("127.0.0.1"));
+            System.out.println("সার্ভার চালু (পোর্ট 7777)। বন্ধ করতে CTRL+C");
+            while (true) {
+                Socket s = ss.accept();
+                s.setTcpNoDelay(true);
+                System.out.println("অ্যাপ যুক্ত হয়েছে");
+                try {
+                    BufferedReader r = new BufferedReader(
+                        new InputStreamReader(s.getInputStream()));
+                    String line;
+                    while ((line = r.readLine()) != null) {
+                        String[] p = line.trim().split(" ");
+                        if (p.length < 3) continue;
+                        float x = Float.parseFloat(p[1]);
+                        float y = Float.parseFloat(p[2]);
+                        if (p[0].equals("D")) {
+                            send(MotionEvent.ACTION_DOWN, x, y);
+                            isDown = true;
+                        } else if (p[0].equals("M") && isDown) {
+                            send(MotionEvent.ACTION_MOVE, x, y);
+                        } else if (p[0].equals("U") && isDown) {
+                            send(MotionEvent.ACTION_UP, x, y);
+                            isDown = false;
+                        }
+                        lx = x;
+                        ly = y;
+                    }
+                } catch (Throwable t) {
+                    t.printStackTrace();
+                }
+                release();
+                s.close();
+                System.out.println("অ্যাপ বিচ্ছিন্ন");
             }
-            send(MotionEvent.ACTION_UP, 880, 2130, down);
-            System.out.println("শেষ। প্রতি ইভেন্টে গড় "
-                + (injNs / injN / 1000) + " মাইক্রোসেকেন্ড");
         } catch (Throwable t) {
             t.printStackTrace();
         }
