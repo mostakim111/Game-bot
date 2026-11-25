@@ -30,9 +30,7 @@ public class CaptureService extends Service {
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[] prev = new int[gw * gh];
     boolean hasPrev = false;
-    int cartX = 540;
-    long lastSwipe = 0;
-   int lastTapX = -1000;
+
     @Override
     public IBinder onBind(Intent i) { return null; }
 
@@ -60,32 +58,15 @@ public class CaptureService extends Service {
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
             ir.getSurface(), null, h);
 
+        Link.target = -1;
+        Link.start();
+
         ir.setOnImageAvailableListener(r -> {
             Image im = r.acquireLatestImage();
             if (im == null) return;
             try { process(im); } finally { im.close(); }
         }, h);
         return START_NOT_STICKY;
-    }
-
-    int findCart(ByteBuffer buf, int rs, int ps) {
-        int best = 0, bx = -1;
-        for (int y = 1004; y <= 1016; y += 3) {
-            int c = 0, mn = 9999, mx = -1;
-            for (int x = 20; x < 520; x += 2) {
-                int o = y * rs + x * ps;
-                int r = buf.get(o) & 0xff;
-                int g = buf.get(o + 1) & 0xff;
-                int b = buf.get(o + 2) & 0xff;
-                if (r > 180 && g < 100 && b > 40 && b < 170) {
-                    c++;
-                    if (x < mn) mn = x;
-                    if (x > mx) mx = x;
-                }
-            }
-            if (c > best && c >= 25) { best = c; bx = mn + mx; }
-        }
-        return bx;
     }
 
     void process(Image im) {
@@ -104,46 +85,29 @@ public class CaptureService extends Service {
             }
         }
 
-        if (Bot.running) {
-            if (System.currentTimeMillis() - Bot.startTime > Bot.MAX_MS) {
-                Bot.running = false;
-                Bot.info = "সময় শেষ, থেমেছে";
-            } else if (hasPrev) {
-                int cx = findCart(buf, rs, ps);
-                boolean cartFound = cx > 0;
-                if (cartFound) cartX = cx;
-
-                int found = -1;
-                int cnt = 0;
-                long sx = 0;
-                for (int gy = gh - 1; gy >= 0 && found < 0; gy--) {
-                    int c = 0;
-                    long s = 0;
-                    for (int gx = 0; gx < gw; gx++) {
-                        int i = gy * gw + gx;
-                        if (Math.abs(cur[i] - prev[i]) > THR) { c++; s += gx; }
-                    }
-                    if (c >= 3) { found = gy; cnt = c; sx = s; }
+        if (Bot.running && hasPrev) {
+            int found = -1, cnt = 0;
+            long sx = 0;
+            for (int gy = gh - 1; gy >= 0 && found < 0; gy--) {
+                int c = 0;
+                long s = 0;
+                for (int gx = 0; gx < gw; gx++) {
+                    int i = gy * gw + gx;
+                    if (Math.abs(cur[i] - prev[i]) > THR) { c++; s += gx; }
                 }
-                if (found >= 0) {
-                    int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
-                    int ty = (Y0 + found * STEP) * 2;
-                    if (tx < 150) tx = 150;
-                    if (tx > 930) tx = 930;
-                    Bot.info = "আইটেম x=" + tx + " y=" + ty
-                        + " cart=" + (cartFound ? cartX : -1);
-                    long now = System.currentTimeMillis();
-                    BotService bs = BotService.instance;
-                                         if (bs != null && now - lastSwipe > 100
-                            && Math.abs(tx - lastTapX) > 40) {
-                        bs.tap(tx, 2130);
-                        lastTapX = tx;
-                        lastSwipe = now;
-                                         }
-                } else {
-                    Bot.info = "কিছু দেখছি না cart=" + (cartFound ? cartX : -1);
-                }
+                if (c >= 3) { found = gy; cnt = c; sx = s; }
             }
+            if (found >= 0) {
+                int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
+                if (tx < 150) tx = 150;
+                if (tx > 930) tx = 930;
+                Link.target = tx;
+                Bot.info = "আইটেম x=" + tx + "\n" + Link.state;
+            } else {
+                Bot.info = "কিছু দেখছি না\n" + Link.state;
+            }
+        } else if (!Bot.running) {
+            Bot.info = "থেমে আছে\n" + Link.state;
         }
         prev = cur;
         hasPrev = true;
@@ -152,6 +116,7 @@ public class CaptureService extends Service {
     @Override
     public void onDestroy() {
         Bot.running = false;
+        Link.shutdown();
         if (vd != null) vd.release();
         if (ir != null) ir.close();
         if (mp != null) mp.stop();
