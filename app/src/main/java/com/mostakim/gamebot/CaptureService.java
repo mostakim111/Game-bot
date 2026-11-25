@@ -27,11 +27,11 @@ public class CaptureService extends Service {
 
     static final int W = 540, H = 1170, STEP = 6;
     static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 960, THR = 40;
-    int cartX = 540;
-    long lastSwipe = 0;
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[] prev = new int[gw * gh];
     boolean hasPrev = false;
+    int cartX = 540;
+    long lastSwipe = 0;
 
     @Override
     public IBinder onBind(Intent i) { return null; }
@@ -68,6 +68,26 @@ public class CaptureService extends Service {
         return START_NOT_STICKY;
     }
 
+    int findCart(ByteBuffer buf, int rs, int ps) {
+        int best = 0, bx = -1;
+        for (int y = 1004; y <= 1016; y += 3) {
+            int c = 0, mn = 9999, mx = -1;
+            for (int x = 20; x < 520; x += 2) {
+                int o = y * rs + x * ps;
+                int r = buf.get(o) & 0xff;
+                int g = buf.get(o + 1) & 0xff;
+                int b = buf.get(o + 2) & 0xff;
+                if (r > 180 && g < 100 && b > 40 && b < 170) {
+                    c++;
+                    if (x < mn) mn = x;
+                    if (x > mx) mx = x;
+                }
+            }
+            if (c > best && c >= 25) { best = c; bx = mn + mx; }
+        }
+        return bx;
+    }
+
     void process(Image im) {
         Image.Plane p = im.getPlanes()[0];
         ByteBuffer buf = p.getBuffer();
@@ -87,8 +107,12 @@ public class CaptureService extends Service {
         if (Bot.running) {
             if (System.currentTimeMillis() - Bot.startTime > Bot.MAX_MS) {
                 Bot.running = false;
-                Bot.info = "৬০ সেকেন্ড শেষ, থেমেছে";
+                Bot.info = "সময় শেষ, থেমেছে";
             } else if (hasPrev) {
+                int cx = findCart(buf, rs, ps);
+                boolean cartFound = cx > 0;
+                if (cartFound) cartX = cx;
+
                 int found = -1;
                 int cnt = 0;
                 long sx = 0;
@@ -104,19 +128,19 @@ public class CaptureService extends Service {
                 if (found >= 0) {
                     int tx = (X0 + (int) (sx / cnt) * STEP) * 2;
                     int ty = (Y0 + found * STEP) * 2;
-                                        if (tx < 150) tx = 150;
+                    if (tx < 150) tx = 150;
                     if (tx > 930) tx = 930;
-                    Bot.info = "আইটেম x=" + tx + " y=" + ty + " cart=" + cartX;
+                    Bot.info = "আইটেম x=" + tx + " y=" + ty
+                        + " cart=" + (cartFound ? cartX : -1);
                     long now = System.currentTimeMillis();
                     BotService bs = BotService.instance;
-                    if (bs != null && now - lastSwipe > 120
+                    if (bs != null && cartFound && now - lastSwipe > 150
                             && Math.abs(tx - cartX) > 50) {
-                        bs.swipe(cartX, 2130, tx, 2130, 60);
-                        cartX = tx;
+                        bs.swipe(cartX, 2130, tx, 2130, 100);
                         lastSwipe = now;
                     }
                 } else {
-                    Bot.info = "কিছু দেখছি না";
+                    Bot.info = "কিছু দেখছি না cart=" + (cartFound ? cartX : -1);
                 }
             }
         }
