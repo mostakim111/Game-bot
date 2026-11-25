@@ -47,19 +47,16 @@ public class BotService extends AccessibilityService {
         dispatchGesture(b.build(), null, null);
     }
 
-    public void tap(float x, float y) {
-        Path p = new Path();
-        p.moveTo(x, y);
-        p.lineTo(x + 1, y);
-        GestureDescription.Builder b = new GestureDescription.Builder();
-        b.addStroke(new GestureDescription.StrokeDescription(p, 0, 40));
-        boolean sent = dispatchGesture(b.build(), new GestureResultCallback() {
-            @Override
-            public void onCompleted(GestureDescription g) { Bot.tapOk++; }
-            @Override
-            public void onCancelled(GestureDescription g) { Bot.tapFail++; }
-        }, null);
-        if (!sent) Bot.tapFail++;
+    static Button small(Context c, String t) {
+        Button b = new Button(c);
+        b.setText(t);
+        b.setTextSize(11);
+        b.setMinHeight(0);
+        b.setMinimumHeight(0);
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        b.setPadding(24, 6, 24, 6);
+        return b;
     }
 
     public void showOverlay() {
@@ -67,19 +64,17 @@ public class BotService extends AccessibilityService {
         final WindowManager wm =
             (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
+        box.setOrientation(LinearLayout.HORIZONTAL);
+        box.setGravity(Gravity.CENTER_VERTICAL);
         box.setBackgroundColor(0xCC000000);
-        box.setPadding(16, 16, 16, 16);
+        box.setPadding(8, 4, 8, 4);
 
         final TextView tv = new TextView(this);
         tv.setTextColor(0xFFFFFFFF);
-        tv.setTextSize(12);
-        final Button go = new Button(this);
-        go.setText("START");
-        Button tt = new Button(this);
-        tt.setText("TEST TAP");
-        Button x = new Button(this);
-        x.setText("CLOSE");
+        tv.setTextSize(10);
+        tv.setWidth(360);
+        final Button go = small(this, "START");
+        Button x = small(this, "CLOSE");
 
         go.setOnClickListener(v -> {
             if (Bot.running) {
@@ -92,27 +87,23 @@ public class BotService extends AccessibilityService {
                 go.setText("STOP");
             }
         });
-        tt.setOnClickListener(v -> {
-            tap(200, 2130);
-            new Handler(Looper.getMainLooper()).postDelayed(
-                () -> tap(880, 2130), 1200);
-        });
         x.setOnClickListener(v -> hideOverlay());
 
         box.addView(tv);
         box.addView(go);
-        box.addView(tt);
         box.addView(x);
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         lp.x = 0;
-        lp.y = 800;
+        lp.y = 100;
         wm.addView(box, lp);
         overlay = box;
 
@@ -121,8 +112,7 @@ public class BotService extends AccessibilityService {
             @Override
             public void run() {
                 if (overlay == null) return;
-                tv.setText(Bot.info + "\ntap ok=" + Bot.tapOk
-                    + " fail=" + Bot.tapFail);
+                tv.setText(Bot.info);
                 if (!Bot.running) go.setText("START");
                 hd.postDelayed(this, 200);
             }
