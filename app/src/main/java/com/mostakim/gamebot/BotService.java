@@ -46,15 +46,23 @@ public class BotService extends AccessibilityService {
         b.addStroke(new GestureDescription.StrokeDescription(p, 0, ms));
         dispatchGesture(b.build(), null, null);
     }
-       public void tap(float x, float y) {
+
+    public void tap(float x, float y) {
         Path p = new Path();
         p.moveTo(x, y);
         p.lineTo(x + 1, y);
         GestureDescription.Builder b = new GestureDescription.Builder();
         b.addStroke(new GestureDescription.StrokeDescription(p, 0, 40));
-        dispatchGesture(b.build(), null, null);
-        }
-       public void showOverlay() {
+        boolean sent = dispatchGesture(b.build(), new GestureResultCallback() {
+            @Override
+            public void onCompleted(GestureDescription g) { Bot.tapOk++; }
+            @Override
+            public void onCancelled(GestureDescription g) { Bot.tapFail++; }
+        }, null);
+        if (!sent) Bot.tapFail++;
+    }
+
+    public void showOverlay() {
         if (overlay != null) return;
         final WindowManager wm =
             (WindowManager) getSystemService(Context.WINDOW_SERVICE);
@@ -68,6 +76,8 @@ public class BotService extends AccessibilityService {
         tv.setTextSize(12);
         final Button go = new Button(this);
         go.setText("START");
+        Button tt = new Button(this);
+        tt.setText("TEST TAP");
         Button x = new Button(this);
         x.setText("CLOSE");
 
@@ -82,10 +92,16 @@ public class BotService extends AccessibilityService {
                 go.setText("STOP");
             }
         });
+        tt.setOnClickListener(v -> {
+            tap(200, 2130);
+            new Handler(Looper.getMainLooper()).postDelayed(
+                () -> tap(880, 2130), 1200);
+        });
         x.setOnClickListener(v -> hideOverlay());
 
         box.addView(tv);
         box.addView(go);
+        box.addView(tt);
         box.addView(x);
 
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
@@ -96,7 +112,7 @@ public class BotService extends AccessibilityService {
             PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
         lp.x = 0;
-        lp.y = 1100;
+        lp.y = 800;
         wm.addView(box, lp);
         overlay = box;
 
@@ -105,7 +121,8 @@ public class BotService extends AccessibilityService {
             @Override
             public void run() {
                 if (overlay == null) return;
-                tv.setText(Bot.info);
+                tv.setText(Bot.info + "\ntap ok=" + Bot.tapOk
+                    + " fail=" + Bot.tapFail);
                 if (!Bot.running) go.setText("START");
                 hd.postDelayed(this, 200);
             }
