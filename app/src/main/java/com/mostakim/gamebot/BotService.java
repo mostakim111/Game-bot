@@ -46,8 +46,15 @@ public class BotService extends AccessibilityService {
         b.addStroke(new GestureDescription.StrokeDescription(p, 0, ms));
         dispatchGesture(b.build(), null, null);
     }
-
-    public void showOverlay() {
+       public void tap(float x, float y) {
+        Path p = new Path();
+        p.moveTo(x, y);
+        p.lineTo(x + 1, y);
+        GestureDescription.Builder b = new GestureDescription.Builder();
+        b.addStroke(new GestureDescription.StrokeDescription(p, 0, 40));
+        dispatchGesture(b.build(), null, null);
+        }
+       public void showOverlay() {
         if (overlay != null) return;
         final WindowManager wm =
             (WindowManager) getSystemService(Context.WINDOW_SERVICE);
