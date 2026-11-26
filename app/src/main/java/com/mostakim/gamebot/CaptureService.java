@@ -26,17 +26,20 @@ public class CaptureService extends Service {
     Handler h = new Handler(Looper.getMainLooper());
 
     static final int W = 540, H = 1170, STEP = 6;
-    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 880, THR = 40;
-    static final int CATCH_Y = 2000;
+    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 900, THR = 40;
+    static final int CATCH_Y = 2040;
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[] prev = new int[gw * gh];
     boolean hasPrev = false;
 
-    int lastRow = -1;
-    int lastX = -1;
-    long lastT = 0;
-    double vy = 500;
-    long holdUntil = 0;
+    int[] bx = new int[16];
+    int[] by = new int[16];
+    int nb = 0;
+
+    boolean tracking = false, lost = false;
+    int tx = 540, ty = 0, x0 = 0, y0 = 0;
+    long releaseAt = 0, t0 = 0;
+    double vy = 500, vx = 0;
 
     @Override
     public IBinder onBind(Intent i) { return null; }
@@ -81,11 +84,34 @@ public class CaptureService extends Service {
         return Math.abs(cur[i] - prev[i]) > THR;
     }
 
-    void arm(long now) {
-        double eta = (CATCH_Y - (Y0 + lastRow * STEP) * 2) / vy * 1000 + 100;
-        if (eta < 200) eta = 200;
-        if (eta > 1000) eta = 1000;
-        holdUntil = now + (long) eta;
+    void findBlobs(int[] cur) {
+        nb = 0;
+        for (int gy = gh - 1; gy >= 0; gy--) {
+            int gx = 0;
+            while (gx < gw) {
+                if (!chg(cur, gy, gx)) { gx++; continue; }
+                int cnt = 0, sum = 0, last = gx;
+                while (gx < gw && gx - last <= 2) {
+                    if (chg(cur, gy, gx)) { cnt++; sum += gx; last = gx; }
+                    gx++;
+                }
+                if (cnt < 4) continue;
+                int x = (X0 + (sum / cnt) * STEP) * 2;
+                int y = (Y0 + gy * STEP) * 2;
+                boolean same = false;
+                for (int k = 0; k < nb; k++) {
+                    if (Math.abs(bx[k] - x) < 140 && by[k] - y <= 120) {
+                        same = true;
+                        break;
+                    }
+                }
+                if (!same && nb < 16) {
+                    bx[nb] = x;
+                    by[nb] = y;
+                    nb++;
+                }
+            }
+        }
     }
 
     void process(Image im) {
@@ -106,55 +132,78 @@ public class CaptureService extends Service {
 
         if (Bot.running && hasPrev) {
             long now = System.currentTimeMillis();
-            int refX = Link.target > 0 ? Link.target : 540;
-            int found = -1, fx = -1;
-            for (int gy = gh - 1; gy >= 0 && found < 0; gy--) {
-                int bestX = -1, bestD = Integer.MAX_VALUE;
-                int gx = 0;
-                while (gx < gw) {
-                    if (!chg(cur, gy, gx)) { gx++; continue; }
-                    int cnt = 0, sum = 0, last = gx;
-                    while (gx < gw && gx - last <= 2) {
-                        if (chg(cur, gy, gx)) { cnt++; sum += gx; last = gx; }
-                        gx++;
-                    }
-                    if (cnt >= 4) {
-                        int x = (X0 + (sum / cnt) * STEP) * 2;
-                        int d = Math.abs(x - refX);
-                        if (d < bestD) { bestD = d; bestX = x; }
-                    }
-                }
-                if (bestX >= 0) { found = gy; fx = bestX; }
+            findBlobs(cur);
+
+            if (tracking && now - t0 > 2500) {
+                tracking = false;
+                lost = false;
             }
 
-            if (found >= 0) {
-                int tx = fx;
-                if (tx < 150) tx = 150;
-                if (tx > 930) tx = 930;
-                int ty = (Y0 + found * STEP) * 2;
-                if (lastRow >= 0 && now > lastT && Math.abs(tx - lastX) < 80) {
-                    int dy = ty - (Y0 + lastRow * STEP) * 2;
-                    if (dy > 0 && dy < 120) {
-                        double v = dy * 1000.0 / (now - lastT);
-                        if (v > 100 && v < 3000) vy = vy * 0.8 + v * 0.2;
+            if (tracking) {
+                int bi = -1;
+                for (int k = 0; k < nb; k++) {
+                    if (Math.abs(bx[k] - tx) < 130
+                            && by[k] >= ty - 60 && by[k] <= ty + 240) {
+                        if (bi < 0 || by[k] > by[bi]) bi = k;
                     }
                 }
-                if (lastRow >= gh - 10 && found < lastRow - 12) arm(now);
-                lastRow = found;
-                lastX = tx;
-                lastT = now;
-                if (now >= holdUntil) Link.target = tx;
-                Bot.info = "আইটেম x=" + tx
-                    + (now < holdUntil ? " (ধরে রাখছি)" : "")
+                if (bi >= 0) {
+                    tx = bx[bi];
+                    ty = by[bi];
+                    lost = false;
+                    long span = now - t0;
+                    if (span > 200 && ty - y0 > 40) {
+                        vy = Math.max(150, Math.min(3000, (ty - y0) * 1000.0 / span));
+                        vx = (tx - x0) * 1000.0 / span;
+                    }
+                } else {
+                    if (!lost) {
+                        lost = true;
+                        double e = (CATCH_Y - ty) / vy * 1000 + 120;
+                        e = Math.max(200, Math.min(1000, e));
+                        releaseAt = now + (long) e;
+                    }
+                    if (now >= releaseAt) {
+                        tracking = false;
+                        lost = false;
+                    }
+                }
+            }
+
+            if (!tracking) {
+                int best = -1;
+                for (int k = 0; k < nb; k++) {
+                    if (by[k] < CATCH_Y - 120 && (best < 0 || by[k] > by[best])) {
+                        best = k;
+                    }
+                }
+                if (best >= 0) {
+                    tracking = true;
+                    lost = false;
+                    tx = bx[best];
+                    ty = by[best];
+                    x0 = tx;
+                    y0 = ty;
+                    t0 = now;
+                    vx = 0;
+                }
+            }
+
+            if (tracking) {
+                double eta = Math.max(0, Math.min(1.2, (CATCH_Y - ty) / vy));
+                double drift = Math.max(-150, Math.min(150, vx * eta));
+                int aim = (int) (tx + drift);
+                aim = Math.max(150, Math.min(930, aim));
+                Link.target = aim;
+                Bot.info = "লক্ষ্য x=" + aim + " গতি=" + (int) vy
+                    + (lost ? " (হারিয়েছে, ধরে আছি)" : "")
                     + "\n" + Link.state;
             } else {
-                if (lastRow >= gh - 10) arm(now);
-                lastRow = -1;
                 Bot.info = "কিছু দেখছি না\n" + Link.state;
             }
         } else if (!Bot.running) {
-            lastRow = -1;
-            holdUntil = 0;
+            tracking = false;
+            lost = false;
             Bot.info = "থেমে আছে\n" + Link.state;
         }
         prev = cur;
