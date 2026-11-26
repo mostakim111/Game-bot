@@ -26,20 +26,23 @@ public class CaptureService extends Service {
     Handler h = new Handler(Looper.getMainLooper());
 
     static final int W = 540, H = 1170, STEP = 6;
-    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 900, THR = 40;
-    static final int CATCH_Y = 2040;
+    static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 870, THR = 35;
+    static final int CATCH_Y = 2020;
+    static final int NR = 4;
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
-    int[] prev = new int[gw * gh];
-    boolean hasPrev = false;
+    int[][] ring = new int[NR][];
+    int ringPos = 0, ringN = 0;
+    int[] ref = null;
 
     int[] bx = new int[16];
     int[] by = new int[16];
     int nb = 0;
 
     boolean tracking = false, lost = false;
-    int tx = 540, ty = 0, x0 = 0, y0 = 0;
-    long releaseAt = 0, t0 = 0;
-    double vy = 500, vx = 0;
+    int tx = 540, ty = 0, y0 = 0;
+    long t0 = 0, lastSeen = 0, releaseAt = 0;
+    double vy = 500;
+    int cartX = -1;
 
     @Override
     public IBinder onBind(Intent i) { return null; }
@@ -81,7 +84,7 @@ public class CaptureService extends Service {
 
     boolean chg(int[] cur, int gy, int gx) {
         int i = gy * gw + gx;
-        return Math.abs(cur[i] - prev[i]) > THR;
+        return Math.abs(cur[i] - ref[i]) > THR;
     }
 
     void findBlobs(int[] cur) {
@@ -95,7 +98,7 @@ public class CaptureService extends Service {
                     if (chg(cur, gy, gx)) { cnt++; sum += gx; last = gx; }
                     gx++;
                 }
-                if (cnt < 4) continue;
+                if (cnt < 4 || cnt > 16) continue;
                 int x = (X0 + (sum / cnt) * STEP) * 2;
                 int y = (Y0 + gy * STEP) * 2;
                 boolean same = false;
@@ -114,6 +117,26 @@ public class CaptureService extends Service {
         }
     }
 
+    int findCart(ByteBuffer buf, int rs, int ps) {
+        int best = 0, cx = -1;
+        for (int y = 1004; y <= 1016; y += 3) {
+            int c = 0, mn = 9999, mx = -1;
+            for (int x = 20; x < 520; x += 2) {
+                int o = y * rs + x * ps;
+                int r = buf.get(o) & 0xff;
+                int g = buf.get(o + 1) & 0xff;
+                int b = buf.get(o + 2) & 0xff;
+                if (r > 180 && g < 100 && b > 40 && b < 170) {
+                    c++;
+                    if (x < mn) mn = x;
+                    if (x > mx) mx = x;
+                }
+            }
+            if (c > best && c >= 25) { best = c; cx = mn + mx; }
+        }
+        return cx;
+    }
+
     void process(Image im) {
         Image.Plane p = im.getPlanes()[0];
         ByteBuffer buf = p.getBuffer();
@@ -129,12 +152,14 @@ public class CaptureService extends Service {
                 cur[gy * gw + gx] = (r * 3 + g * 6 + b) / 10;
             }
         }
+        ref = (ringN >= NR) ? ring[ringPos] : null;
 
-        if (Bot.running && hasPrev) {
+        if (Bot.running && ref != null) {
             long now = System.currentTimeMillis();
+            cartX = findCart(buf, rs, ps);
             findBlobs(cur);
 
-            if (tracking && now - t0 > 2500) {
+            if (tracking && now - t0 > 4500) {
                 tracking = false;
                 lost = false;
             }
@@ -143,25 +168,26 @@ public class CaptureService extends Service {
                 int bi = -1;
                 for (int k = 0; k < nb; k++) {
                     if (Math.abs(bx[k] - tx) < 130
-                            && by[k] >= ty - 60 && by[k] <= ty + 240) {
+                            && by[k] >= ty - 80 && by[k] <= ty + 260) {
                         if (bi < 0 || by[k] > by[bi]) bi = k;
                     }
                 }
                 if (bi >= 0) {
                     tx = bx[bi];
                     ty = by[bi];
+                    lastSeen = now;
                     lost = false;
                     long span = now - t0;
-                    if (span > 200 && ty - y0 > 40) {
-                        vy = Math.max(150, Math.min(3000, (ty - y0) * 1000.0 / span));
-                        vx = (tx - x0) * 1000.0 / span;
+                    if (span > 300 && ty - y0 > 60) {
+                        double v = (ty - y0) * 1000.0 / span;
+                        if (v > 150 && v < 2500) vy = vy * 0.85 + v * 0.15;
                     }
-                } else {
+                } else if (now - lastSeen > 120) {
                     if (!lost) {
                         lost = true;
-                        double e = (CATCH_Y - ty) / vy * 1000 + 120;
-                        e = Math.max(200, Math.min(1000, e));
-                        releaseAt = now + (long) e;
+                        double e = (CATCH_Y - ty) / vy * 1000 + 40;
+                        e = Math.max(150, Math.min(1200, e));
+                        releaseAt = lastSeen + (long) e;
                     }
                     if (now >= releaseAt) {
                         tracking = false;
@@ -173,41 +199,37 @@ public class CaptureService extends Service {
             if (!tracking) {
                 int best = -1;
                 for (int k = 0; k < nb; k++) {
-                    if (by[k] < CATCH_Y - 120 && (best < 0 || by[k] > by[best])) {
-                        best = k;
-                    }
+                    if (best < 0 || by[k] > by[best]) best = k;
                 }
                 if (best >= 0) {
                     tracking = true;
                     lost = false;
                     tx = bx[best];
                     ty = by[best];
-                    x0 = tx;
                     y0 = ty;
                     t0 = now;
-                    vx = 0;
+                    lastSeen = now;
                 }
             }
 
             if (tracking) {
-                double eta = Math.max(0, Math.min(1.2, (CATCH_Y - ty) / vy));
-                double drift = Math.max(-150, Math.min(150, vx * eta));
-                int aim = (int) (tx + drift);
-                aim = Math.max(150, Math.min(930, aim));
+                int aim = Math.max(150, Math.min(930, tx));
                 Link.target = aim;
-                Bot.info = "লক্ষ্য x=" + aim + " গতি=" + (int) vy
-                    + (lost ? " (হারিয়েছে, ধরে আছি)" : "")
+                Bot.info = "লক্ষ্য x=" + aim + " cart=" + cartX
+                    + " গতি=" + (int) vy + (lost ? " (ধরে আছি)" : "")
                     + "\n" + Link.state;
             } else {
-                Bot.info = "কিছু দেখছি না\n" + Link.state;
+                Bot.info = "কিছু দেখছি না cart=" + cartX + "\n" + Link.state;
             }
         } else if (!Bot.running) {
             tracking = false;
             lost = false;
             Bot.info = "থেমে আছে\n" + Link.state;
         }
-        prev = cur;
-        hasPrev = true;
+
+        ring[ringPos] = cur;
+        ringPos = (ringPos + 1) % NR;
+        if (ringN < NR) ringN++;
     }
 
     @Override
