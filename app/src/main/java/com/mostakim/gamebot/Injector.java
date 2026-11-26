@@ -15,9 +15,7 @@ import java.net.Socket;
 public class Injector {
     static Object mgr;
     static Method inject;
-    static long downTime = 0;
-    static volatile boolean isDown = false;
-    static volatile float lx = 540, ly = 2130;
+    static final int TAP_MS = 35;
 
     static void init() throws Exception {
         try {
@@ -31,29 +29,37 @@ public class Injector {
             InputEvent.class, int.class);
     }
 
-    static synchronized void send(int action, float x, float y) throws Exception {
+    static void send(int action, long down, float x, float y) throws Exception {
         long now = SystemClock.uptimeMillis();
-        if (action == MotionEvent.ACTION_DOWN) downTime = now;
-        MotionEvent e = MotionEvent.obtain(downTime, now, action, x, y,
+        MotionEvent e = MotionEvent.obtain(down, now, action, x, y,
             1.0f, 1.0f, 0, 1.0f, 1.0f, 0, 0);
         e.setSource(InputDevice.SOURCE_TOUCHSCREEN);
         inject.invoke(mgr, e, 0);
         e.recycle();
     }
 
-    static void release() {
-        try {
-            if (isDown) {
-                send(MotionEvent.ACTION_UP, lx, ly);
-                isDown = false;
-            }
-        } catch (Throwable ignore) {}
+    static void tap(float x, float y) throws Exception {
+        long down = SystemClock.uptimeMillis();
+        send(MotionEvent.ACTION_DOWN, down, x, y);
+        Thread.sleep(TAP_MS);
+        send(MotionEvent.ACTION_UP, down, x, y);
     }
 
     public static void main(String[] args) {
         try {
             init();
-            Runtime.getRuntime().addShutdownHook(new Thread(Injector::release));
+            if (args.length > 0 && args[0].equals("test")) {
+                System.out.println("৮ সেকেন্ডে Cart Catch-এ গিয়ে খেলা শুরু করো...");
+                Thread.sleep(8000);
+                float[] xs = {200, 880, 540, 200, 880, 540};
+                for (float x : xs) {
+                    System.out.println("tap x=" + (int) x);
+                    tap(x, 2130);
+                    Thread.sleep(1000);
+                }
+                System.out.println("শেষ");
+                return;
+            }
             ServerSocket ss = new ServerSocket(7777, 1,
                 InetAddress.getByName("127.0.0.1"));
             System.out.println("সার্ভার চালু (পোর্ট 7777)। বন্ধ করতে CTRL+C");
@@ -66,26 +72,19 @@ public class Injector {
                         new InputStreamReader(s.getInputStream()));
                     String line;
                     while ((line = r.readLine()) != null) {
-                        String[] p = line.trim().split(" ");
-                        if (p.length < 3) continue;
-                        float x = Float.parseFloat(p[1]);
-                        float y = Float.parseFloat(p[2]);
-                        if (p[0].equals("D")) {
-                            send(MotionEvent.ACTION_DOWN, x, y);
-                            isDown = true;
-                        } else if (p[0].equals("M") && isDown) {
-                            send(MotionEvent.ACTION_MOVE, x, y);
-                        } else if (p[0].equals("U") && isDown) {
-                            send(MotionEvent.ACTION_UP, x, y);
-                            isDown = false;
+                        String last = line;
+                        while (r.ready()) {
+                            String l2 = r.readLine();
+                            if (l2 == null) break;
+                            last = l2;
                         }
-                        lx = x;
-                        ly = y;
+                        String[] p = last.trim().split(" ");
+                        if (p.length < 3 || !p[0].equals("T")) continue;
+                        tap(Float.parseFloat(p[1]), Float.parseFloat(p[2]));
                     }
                 } catch (Throwable t) {
                     t.printStackTrace();
                 }
-                release();
                 s.close();
                 System.out.println("অ্যাপ বিচ্ছিন্ন");
             }
