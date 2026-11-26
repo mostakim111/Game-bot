@@ -34,26 +34,24 @@ public class Link {
             s.setTcpNoDelay(true);
             OutputStream o = s.getOutputStream();
             state = "link: যুক্ত";
-            boolean down = false;
-            int last = -1;
+            int last = -1000;
+            int count = 0;
+            long lastSend = 0;
             while (alive) {
                 int t = target;
-                if (Bot.running && t > 0) {
-                    if (!down) {
-                        send(o, "D " + t + " 2130");
-                        down = true;
-                        last = t;
-                   } else if (Math.abs(t - last) >= 25) {
-                        send(o, "M " + t + " 2130");
-                        last = t;
-                    }
-                } else if (down) {
-                    send(o, "U " + last + " 2130");
-                    down = false;
+                long now = System.currentTimeMillis();
+                if (!Bot.running) {
+                    last = -1000;
+                } else if (t > 0 && Math.abs(t - last) >= 25
+                        && now - lastSend >= 70) {
+                    send(o, "T " + t + " 2130");
+                    last = t;
+                    lastSend = now;
+                    count++;
+                    state = "link: যুক্ত tap=" + count;
                 }
                 Thread.sleep(4);
             }
-            if (down) send(o, "U " + last + " 2130");
         } catch (Throwable e) {
             state = "link ত্রুটি: " + e.getClass().getSimpleName();
         } finally {
