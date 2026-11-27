@@ -11,7 +11,7 @@ public class Tracker {
     public double vy = 225;
     public double catchY = 1960;
     public double zoneBottom = 1740;
-    public long holdAfter = 180;
+    public long holdAfter = 120;
     public int lastTarget = -1;
     public int nTracks = 0;
 
@@ -46,7 +46,7 @@ public class Tracker {
                 long age = now - t0[i];
                 if (age > 500 && y[i] - y0[i] > 100) {
                     double v = (y[i] - y0[i]) * 1000.0 / age;
-                    if (v > 100 && v < 3000) vy = 0.98 * vy + 0.02 * v;
+                    if (v > 100 && v < 3000) vy = 0.95 * vy + 0.05 * v;
                 }
             } else {
                 int slot = -1;
