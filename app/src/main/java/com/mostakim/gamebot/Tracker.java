@@ -11,7 +11,7 @@ public class Tracker {
     public double vy = 225;
     public double catchY = 1960;
     public double zoneBottom = 1740;
-    public long holdAfter = 120;
+    public long holdAfter = 60;
     public int lastTarget = -1;
     public int nTracks = 0;
 
