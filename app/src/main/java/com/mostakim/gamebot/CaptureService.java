@@ -27,7 +27,6 @@ public class CaptureService extends Service {
 
     static final int W = 540, H = 1170, STEP = 6;
     static final int X0 = 60, X1 = 480, Y0 = 350, Y1 = 870, THR = 35;
-    static final int CATCH_Y = 2020;
     static final int NR = 4;
     final int gw = (X1 - X0) / STEP, gh = (Y1 - Y0) / STEP;
     int[][] ring = new int[NR][];
@@ -38,10 +37,7 @@ public class CaptureService extends Service {
     int[] by = new int[16];
     int nb = 0;
 
-    boolean tracking = false, lost = false;
-    int tx = 540, ty = 0, y0 = 0;
-    long t0 = 0, lastSeen = 0, releaseAt = 0;
-    double vy = 500;
+    Tracker tr = new Tracker();
     int cartX = -1;
 
     @Override
@@ -158,72 +154,18 @@ public class CaptureService extends Service {
             long now = System.currentTimeMillis();
             cartX = findCart(buf, rs, ps);
             findBlobs(cur);
-
-            if (tracking && now - t0 > 4500) {
-                tracking = false;
-                lost = false;
-            }
-
-            if (tracking) {
-                int bi = -1;
-                for (int k = 0; k < nb; k++) {
-                    if (Math.abs(bx[k] - tx) < 130
-                            && by[k] >= ty - 80 && by[k] <= ty + 260) {
-                        if (bi < 0 || by[k] > by[bi]) bi = k;
-                    }
-                }
-                if (bi >= 0) {
-                    tx = bx[bi];
-                    ty = by[bi];
-                    lastSeen = now;
-                    lost = false;
-                    long span = now - t0;
-                    if (span > 300 && ty - y0 > 60) {
-                        double v = (ty - y0) * 1000.0 / span;
-                        if (v > 150 && v < 2500) vy = vy * 0.85 + v * 0.15;
-                    }
-                } else if (now - lastSeen > 120) {
-                    if (!lost) {
-                        lost = true;
-                        double e = (CATCH_Y - ty) / vy * 1000 + 40;
-                        e = Math.max(150, Math.min(1200, e));
-                        releaseAt = lastSeen + (long) e;
-                    }
-                    if (now >= releaseAt) {
-                        tracking = false;
-                        lost = false;
-                    }
-                }
-            }
-
-            if (!tracking) {
-                int best = -1;
-                for (int k = 0; k < nb; k++) {
-                    if (best < 0 || by[k] > by[best]) best = k;
-                }
-                if (best >= 0) {
-                    tracking = true;
-                    lost = false;
-                    tx = bx[best];
-                    ty = by[best];
-                    y0 = ty;
-                    t0 = now;
-                    lastSeen = now;
-                }
-            }
-
-            if (tracking) {
-                int aim = Math.max(150, Math.min(930, tx));
+            int tg = tr.update(bx, by, nb, now);
+            if (tg > 0) {
+                int aim = Math.max(150, Math.min(930, tg));
                 Link.target = aim;
                 Bot.info = "লক্ষ্য x=" + aim + " cart=" + cartX
-                    + " গতি=" + (int) vy + (lost ? " (ধরে আছি)" : "")
+                    + " আইটেম=" + tr.nTracks + " গতি=" + (int) tr.vy
                     + "\n" + Link.state;
             } else {
                 Bot.info = "কিছু দেখছি না cart=" + cartX + "\n" + Link.state;
             }
         } else if (!Bot.running) {
-            tracking = false;
-            lost = false;
+            tr = new Tracker();
             Bot.info = "থেমে আছে\n" + Link.state;
         }
 
