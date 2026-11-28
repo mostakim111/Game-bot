@@ -60,7 +60,7 @@ public class SkyCtl {
         }
         double yp = y + vy * lat + 0.5 * gEst * lat * lat;
         double thr = target + hEst * 0.5 + biasK;
-        if (yp > thr && t - lastTap >= cool) {
+        if (yp > thr && vy > 40 && t - lastTap >= cool) {
             lastTap = t; tapY = y; apexY = y; tracking = true; flaps++;
             return true;
         }
