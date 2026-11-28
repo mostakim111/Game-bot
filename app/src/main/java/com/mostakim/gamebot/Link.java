@@ -6,6 +6,7 @@ import java.net.Socket;
 
 public class Link {
     public static volatile int target = -1;
+    public static volatile long flapSeq = 0;
     public static volatile String state = "link: বন্ধ";
     static volatile boolean alive = false;
 
@@ -37,18 +38,30 @@ public class Link {
             int last = -1000;
             int count = 0;
             long lastSend = 0;
+            long sentFlap = flapSeq;
             while (alive) {
-                int t = target;
                 long now = System.currentTimeMillis();
-                if (!Bot.running) {
-                    last = -1000;
-                } else if (t > 0 && Math.abs(t - last) >= 25
-                        && now - lastSend >= 70) {
-                    send(o, "T " + t + " 2130");
-                    last = t;
-                    lastSend = now;
-                    count++;
-                    state = "link: যুক্ত tap=" + count;
+                if (Bot.mode == 1) {
+                    if (!Bot.running) {
+                        sentFlap = flapSeq;
+                    } else if (flapSeq != sentFlap) {
+                        send(o, "T 540 1500");
+                        sentFlap = flapSeq;
+                        count++;
+                        state = "link: যুক্ত tap=" + count;
+                    }
+                } else {
+                    int t = target;
+                    if (!Bot.running) {
+                        last = -1000;
+                    } else if (t > 0 && Math.abs(t - last) >= 25
+                            && now - lastSend >= 70) {
+                        send(o, "T " + t + " 2130");
+                        last = t;
+                        lastSend = now;
+                        count++;
+                        state = "link: যুক্ত tap=" + count;
+                    }
                 }
                 Thread.sleep(4);
             }
