@@ -63,11 +63,18 @@ public class BotService extends AccessibilityService {
         if (overlay != null) return;
         final WindowManager wm =
             (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+
         LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.HORIZONTAL);
-        box.setGravity(Gravity.CENTER_VERTICAL);
+        box.setOrientation(LinearLayout.VERTICAL);
         box.setBackgroundColor(0xCC000000);
         box.setPadding(8, 4, 8, 4);
+
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        row1.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setGravity(Gravity.CENTER_VERTICAL);
 
         final TextView tv = new TextView(this);
         tv.setTextColor(0xFFFFFFFF);
@@ -75,6 +82,11 @@ public class BotService extends AccessibilityService {
         tv.setWidth(360);
         final Button go = small(this, "START");
         Button x = small(this, "CLOSE");
+        final Button md = small(this, "CATCH");
+        Button bm = small(this, "B-");
+        Button bp = small(this, "B+");
+        Button lm = small(this, "L-");
+        Button lp = small(this, "L+");
 
         go.setOnClickListener(v -> {
             if (Bot.running) {
@@ -87,13 +99,33 @@ public class BotService extends AccessibilityService {
                 go.setText("STOP");
             }
         });
+        md.setOnClickListener(v -> {
+            Bot.running = false;
+            Bot.mode = (Bot.mode == 0) ? 1 : 0;
+            go.setText("START");
+        });
+        bm.setOnClickListener(v -> { Bot.skyBias = Bot.skyBias - 15; });
+        bp.setOnClickListener(v -> { Bot.skyBias = Bot.skyBias + 15; });
+        lm.setOnClickListener(v -> {
+            Bot.skyLat = Math.max(0.04, Bot.skyLat - 0.02);
+        });
+        lp.setOnClickListener(v -> {
+            Bot.skyLat = Math.min(0.50, Bot.skyLat + 0.02);
+        });
         x.setOnClickListener(v -> hideOverlay());
 
-        box.addView(tv);
-        box.addView(go);
-        box.addView(x);
+        row1.addView(tv);
+        row1.addView(go);
+        row1.addView(x);
+        row2.addView(md);
+        row2.addView(bm);
+        row2.addView(bp);
+        row2.addView(lm);
+        row2.addView(lp);
+        box.addView(row1);
+        box.addView(row2);
 
-        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+        WindowManager.LayoutParams lp2 = new WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
@@ -101,10 +133,10 @@ public class BotService extends AccessibilityService {
                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
                 | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.TOP | Gravity.START;
-        lp.x = 0;
-        lp.y = 100;
-        wm.addView(box, lp);
+        lp2.gravity = Gravity.TOP | Gravity.START;
+        lp2.x = 0;
+        lp2.y = 100;
+        wm.addView(box, lp2);
         overlay = box;
 
         final Handler hd = new Handler(Looper.getMainLooper());
@@ -112,7 +144,9 @@ public class BotService extends AccessibilityService {
             @Override
             public void run() {
                 if (overlay == null) return;
-                tv.setText(Bot.info);
+                tv.setText(Bot.info + "\nB=" + (int) Bot.skyBias
+                    + " L=" + (int) Math.round(Bot.skyLat * 1000) + "ms");
+                md.setText(Bot.mode == 0 ? "CATCH" : "SKY");
                 if (!Bot.running) go.setText("START");
                 hd.postDelayed(this, 200);
             }
