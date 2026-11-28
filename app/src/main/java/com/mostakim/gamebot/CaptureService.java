@@ -40,6 +40,10 @@ public class CaptureService extends Service {
     Tracker tr = new Tracker();
     int cartX = -1;
 
+    SkyVision sv = new SkyVision();
+    SkyCtl ctl = new SkyCtl();
+    double gapC = -1;
+
     @Override
     public IBinder onBind(Intent i) { return null; }
 
@@ -133,10 +137,36 @@ public class CaptureService extends Service {
         return cx;
     }
 
+    void skyStep(ByteBuffer buf, int rs, int ps) {
+        if (!Bot.running) {
+            ctl.reset();
+            gapC = -1;
+            Bot.info = "SKY: থেমে আছে\n" + Link.state;
+            return;
+        }
+        double t = System.currentTimeMillis() / 1000.0;
+        sv.analyze(buf, rs, ps);
+        if (sv.haveGap) gapC = sv.gapC;
+        double target = gapC > 0 ? gapC : 1350;
+        if (sv.haveCart) {
+            ctl.lat = Bot.skyLat;
+            ctl.cool = Bot.skyCool;
+            ctl.biasK = Bot.skyBias;
+            if (ctl.update(t, sv.cartY, target)) Link.flapSeq++;
+        }
+        Bot.info = "SKY cart=" + (sv.haveCart ? (int) sv.cartY : -1)
+            + " gap=" + (int) target + (sv.haveGap ? "" : "?")
+            + " flap=" + ctl.flaps + "\n" + Link.state;
+    }
+
     void process(Image im) {
         Image.Plane p = im.getPlanes()[0];
         ByteBuffer buf = p.getBuffer();
         int rs = p.getRowStride(), ps = p.getPixelStride();
+        if (Bot.mode == 1) {
+            skyStep(buf, rs, ps);
+            return;
+        }
         int[] cur = new int[gw * gh];
         for (int gy = 0; gy < gh; gy++) {
             for (int gx = 0; gx < gw; gx++) {
